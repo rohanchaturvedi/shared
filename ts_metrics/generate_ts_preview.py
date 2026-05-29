@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 T&S Metrics — Live HTML Preview Generator
-=========================================
+==========================================
 SETUP (one time only):
   1. Set your Snowflake email below.
   2. Run: pip install sqlalchemy snowflake-sqlalchemy pandas
@@ -23,8 +23,8 @@ import pandas as pd
 from sqlalchemy import create_engine, text
 from snowflake.sqlalchemy import URL
 
-BASE = os.path.dirname(os.path.abspath(__file__))
-OUT  = os.path.join(BASE, 'ts_metrics_live.html')
+BASE  = os.path.dirname(os.path.abspath(__file__))
+OUT   = os.path.join(BASE, 'ts_metrics_live.html')
 
 def read_sql(fname):
     with open(os.path.join(BASE, fname)) as f:
@@ -32,20 +32,21 @@ def read_sql(fname):
     return '\n'.join(lines)
 
 def pct(v, dec=1):
-    if v is None or pd.isna(v): return 'N/A'
+    if v is None or (hasattr(v,'__class__') and v.__class__.__name__ == 'NaTType'): return 'N/A'
     sign = '+' if float(v) >= 0 else ''
     return f"{sign}{float(v)*100:.{dec}f}%"
 
 def bps(v, dec=2):
-    if v is None or pd.isna(v): return 'N/A'
+    if v is None: return 'N/A'
     return f"{float(v):.{dec}f} bps"
 
 def pct_abs(v, dec=1):
-    if v is None or pd.isna(v): return 'N/A'
+    if v is None: return 'N/A'
     return f"{float(v)*100:.{dec}f}%"
 
 def dollar(v):
-    return f"${float(v)/1e6:,.1f}M"
+    m = float(v)/1e6
+    return f"${m:,.1f}M"
 
 def fmt_int(v):
     return f"{int(v):,}"
@@ -59,52 +60,136 @@ print("Connected. Running queries...")
 
 def q(sql): return pd.read_sql(text(sql), conn)
 
-df1 = q(read_sql('m1_dispute_rate_7d.sql'));   df1.columns = [c.lower() for c in df1.columns]
-df2 = q(read_sql('m2_reason_type.sql'));       df2.columns = [c.lower() for c in df2.columns]; df2 = df2.sort_values('trxn_month').reset_index(drop=True)
-df3 = q(read_sql('m3_approve_deny.sql'));      df3.columns = [c.lower() for c in df3.columns]; df3 = df3.sort_values('resolution_month').reset_index(drop=True)
-df4 = q(read_sql('m4_unit_rate.sql'));         df4.columns = [c.lower() for c in df4.columns]; df4 = df4.sort_values('trxn_month').reset_index(drop=True)
-df5 = q(read_sql('m5_yoy_trend.sql'));         df5.columns = [c.lower() for c in df5.columns]
-print("All queries done. Building dashboard...")
+# ── Query 1: Dispute rate by $ ────────────────────────────────────────────────
+df1 = q(read_sql('m1_dispute_rate_7d.sql'))
+df1.columns = [c.lower() for c in df1.columns]
 
-# ── Extract values ────────────────────────────────────────────────────────────
-m1_cur = df1[df1['mth_offset'] == -1].iloc[0]
-m1_py  = df1[df1['mth_offset'] == -13].iloc[0] if -13 in df1['mth_offset'].values else None
-s1_cur = bps(m1_cur['dispute_rate_7d']); s1_yoy = pct(m1_cur.get('yoy_7d')); s1_mom = pct(m1_cur.get('mom_7d'))
-s1_py  = bps(m1_py['dispute_rate_7d']) if m1_py is not None else 'N/A'
-months14 = df1['txn_month'].tolist()
-d_7d = [round(float(v),2) if pd.notna(v) else None for v in df1['dispute_rate_7d']]
+# ── Query 2: Reason type breakdown ───────────────────────────────────────────
+df2 = q(read_sql('m2_reason_type.sql'))
+df2.columns = [c.lower() for c in df2.columns]
+df2 = df2.sort_values('trxn_month').reset_index(drop=True)
 
-months13 = df2['trxn_month'].tolist()
-d_ut = [round(float(v),6) if pd.notna(v) else None for v in df2['ut']]
-d_ea = [round(float(v),6) if pd.notna(v) else None for v in df2['ea_plus_nonreg']]
-m2_cur = df2.iloc[-1]; m2_lm = df2.iloc[-2]; m2_py = df2.iloc[0]
-s2_ut_cur=pct_abs(m2_cur['pct_ut']); s2_ut_lm=pct_abs(m2_lm['pct_ut']); s2_ut_py=pct_abs(m2_py['pct_ut'])
-s2_ea_cur=pct_abs(m2_cur['pct_ea_nonreg']); s2_ea_lm=pct_abs(m2_lm['pct_ea_nonreg']); s2_ea_py=pct_abs(m2_py['pct_ea_nonreg'])
+# ── Query 3: Approve/deny ─────────────────────────────────────────────────────
+df3 = q(read_sql('m3_approve_deny.sql'))
+df3.columns = [c.lower() for c in df3.columns]
+df3 = df3.sort_values('resolution_month').reset_index(drop=True)
 
+# ── Query 4: Unit rate ────────────────────────────────────────────────────────
+df4 = q(read_sql('m4_unit_rate.sql'))
+df4.columns = [c.lower() for c in df4.columns]
+df4 = df4.sort_values('trxn_month').reset_index(drop=True)
+
+# ── Query 5: YoY trend ────────────────────────────────────────────────────────
+df5 = q(read_sql('m5_yoy_trend.sql'))
+df5.columns = [c.lower() for c in df5.columns]
+
+print("Queries complete. Building dashboard...")
+
+# ═════════════════════════════════════════════════════════════════════════════
+# EXTRACT VALUES
+# ═════════════════════════════════════════════════════════════════════════════
+
+# ── Tab 1 data ────────────────────────────────────────────────────────────────
+m1_cur  = df1[df1['mth_offset'] == -1].iloc[0]
+m1_py   = df1[df1['mth_offset'] == -13].iloc[0] if -13 in df1['mth_offset'].values else None
+m1_lm   = df1[df1['mth_offset'] == -2].iloc[0]
+
+s1_cur  = bps(m1_cur['dispute_rate_7d'])
+s1_yoy  = pct(m1_cur.get('yoy_7d'))
+s1_mom  = pct(m1_cur.get('mom_7d'))
+s1_py   = bps(m1_py['dispute_rate_7d']) if m1_py is not None else 'N/A'
+
+months14   = df1['txn_month'].tolist()
+d_7d       = [round(float(v), 2) if pd.notna(v) else None for v in df1['dispute_rate_7d']]
+
+# ── Tab 2 data ────────────────────────────────────────────────────────────────
+months13  = df2['trxn_month'].tolist()
+d_ut      = [round(float(v), 6) if pd.notna(v) else None for v in df2['ut']]
+d_ea      = [round(float(v), 6) if pd.notna(v) else None for v in df2['ea_plus_nonreg']]
+
+m2_cur = df2.iloc[-1];  m2_lm = df2.iloc[-2];  m2_py = df2.iloc[0]
+s2_ut_cur = pct_abs(m2_cur['pct_ut']);   s2_ut_lm = pct_abs(m2_lm['pct_ut']);   s2_ut_py = pct_abs(m2_py['pct_ut'])
+s2_ea_cur = pct_abs(m2_cur['pct_ea_nonreg']); s2_ea_lm = pct_abs(m2_lm['pct_ea_nonreg']); s2_ea_py = pct_abs(m2_py['pct_ea_nonreg'])
+
+def pivot_row(row):
+    return {
+        'month': str(row['trxn_month'])[:10],
+        'ea':    pct_abs(row['ea']),   'non_reg': pct_abs(row['non_reg']),
+        'not_d': pct_abs(row.get('not_disputed', 0)),
+        'ut':    pct_abs(row['ut']),   'total':   pct_abs(row['grand_total']),
+        'pct_ut': pct_abs(row['pct_ut']), 'pct_ea': pct_abs(row['pct_ea_nonreg'])
+    }
+pivot2 = [pivot_row(df2.iloc[i]) for i in range(len(df2))]
+
+# ── Tab 3 data ────────────────────────────────────────────────────────────────
 months13r = df3['resolution_month'].tolist()
-d_adlr = [round(float(v),4) if pd.notna(v) else None for v in df3['approval_rate_dlr']]
-d_acnt = [round(float(v),4) if pd.notna(v) else None for v in df3['approval_rate_cnt']]
-m3_cur = df3.iloc[-1]; m3_py = df3.iloc[0]
-s3_dlr_cur=pct_abs(m3_cur['approval_rate_dlr'],0); s3_dlr_mom=pct(m3_cur.get('mom_dlr')); s3_dlr_yoy=pct(m3_cur.get('yoy_dlr')); s3_dlr_py=pct_abs(m3_py['approval_rate_dlr'],0)
-s3_cnt_cur=pct_abs(m3_cur['approval_rate_cnt'],0); s3_cnt_mom=pct(m3_cur.get('mom_cnt')); s3_cnt_yoy=pct(m3_cur.get('yoy_cnt')); s3_cnt_py=pct_abs(m3_py['approval_rate_cnt'],0)
+d_adlr    = [round(float(v), 4) if pd.notna(v) else None for v in df3['approval_rate_dlr']]
+d_acnt    = [round(float(v), 4) if pd.notna(v) else None for v in df3['approval_rate_cnt']]
 
-months14u  = df4['trxn_month'].tolist()
-d_unit_bps = [round(float(v),2) if pd.notna(v) else None for v in df4['dispute_rate_cnt_bps']]
-m4_cur=df4.iloc[-2]; m4_lm=df4.iloc[-3]; m4_py=df4.iloc[0]
-cur_bps=float(m4_cur['dispute_rate_cnt_bps']); lm_bps=float(m4_lm['dispute_rate_cnt_bps']); py_bps=float(m4_py['dispute_rate_cnt_bps'])
-s4_cur=f"{cur_bps:.2f} bps"; s4_mom=f"{(cur_bps-lm_bps)/cur_bps*100:+.1f}%" if cur_bps else 'N/A'
-s4_yoy=f"{(cur_bps-py_bps)/cur_bps*100:+.1f}%" if cur_bps else 'N/A'; s4_py=f"{py_bps:.2f} bps"
+m3_cur = df3.iloc[-1];  m3_py = df3.iloc[0]
+s3_dlr_cur = pct_abs(m3_cur['approval_rate_dlr'], 0)
+s3_dlr_mom = pct(m3_cur.get('mom_dlr'))
+s3_dlr_yoy = pct(m3_cur.get('yoy_dlr'))
+s3_dlr_py  = pct_abs(m3_py['approval_rate_dlr'], 0)
+s3_cnt_cur = pct_abs(m3_cur['approval_rate_cnt'], 0)
+s3_cnt_mom = pct(m3_cur.get('mom_cnt'))
+s3_cnt_yoy = pct(m3_cur.get('yoy_cnt'))
+s3_cnt_py  = pct_abs(m3_py['approval_rate_cnt'], 0)
 
+def approv_row(row):
+    return {
+        'month':   str(row['resolution_month'])[:10],
+        'app_amt': dollar(row['approve_amt']),  'den_amt': dollar(row['deny_amt']),
+        'tot_amt': dollar(row['total_amt']),    'rate_d':  pct_abs(row['approval_rate_dlr'],0),
+        'app_cnt': fmt_int(row['approve_cnt']), 'den_cnt': fmt_int(row['deny_cnt']),
+        'tot_cnt': fmt_int(row['total_cnt']),   'rate_c':  pct_abs(row['approval_rate_cnt'],0)
+    }
+pivot3 = [approv_row(df3.iloc[i]) for i in range(len(df3))]
+tot3 = {
+    'app_amt': dollar(df3['approve_amt'].sum()),  'den_amt': dollar(df3['deny_amt'].sum()),
+    'tot_amt': dollar(df3['total_amt'].sum()),    'rate_d':  pct_abs(df3['approve_amt'].sum()/df3['total_amt'].sum(), 0),
+    'app_cnt': fmt_int(df3['approve_cnt'].sum()), 'den_cnt': fmt_int(df3['deny_cnt'].sum()),
+    'tot_cnt': fmt_int(df3['total_cnt'].sum()),   'rate_c':  pct_abs(df3['approve_cnt'].sum()/df3['total_cnt'].sum(), 0)
+}
+
+# ── Tab 4 data ────────────────────────────────────────────────────────────────
+months14u   = df4['trxn_month'].tolist()
+d_unit_bps  = [round(float(v), 2) if pd.notna(v) else None for v in df4['dispute_rate_cnt_bps']]
+
+# skip partial current month (last row desc = iloc[-1] in asc order... but df4 is asc now)
+# first row = oldest, last row = current partial, second-to-last = current complete month
+m4_cur = df4.iloc[-2];  m4_lm = df4.iloc[-3];  m4_py = df4.iloc[0]
+cur_bps = float(m4_cur['dispute_rate_cnt_bps'])
+lm_bps  = float(m4_lm['dispute_rate_cnt_bps'])
+py_bps  = float(m4_py['dispute_rate_cnt_bps'])
+s4_cur  = f"{cur_bps:.2f} bps"
+s4_mom  = f"{(cur_bps-lm_bps)/cur_bps*100:+.1f}%" if cur_bps else 'N/A'
+s4_yoy  = f"{(cur_bps-py_bps)/cur_bps*100:+.1f}%" if cur_bps else 'N/A'
+s4_py   = f"{py_bps:.2f} bps"
+
+def unit_row(row):
+    return {
+        'month': str(row['trxn_month'])[:10],
+        'cnt7d': fmt_int(row['dispute_7d_cnt']), 'tcnt': fmt_int(row['trxn_cnt']),
+        'damt':  dollar(row['disputed_amt']),    'tamt': f"${float(row['trxn_amt'])/1e9:.1f}B",
+        'rdlr':  f"{float(row['dispute_rate_dlr'])*100:.4f}%",
+        'rbps':  f"{float(row['dispute_rate_cnt_bps']):.2f} bps"
+    }
+pivot4 = [unit_row(df4.iloc[i]) for i in range(len(df4))]
+
+# ── Tab 5 data ────────────────────────────────────────────────────────────────
 yoy_years = sorted(df5['txn_year'].unique().tolist())
 yoy_series = {}
 for yr in yoy_years:
-    sub = df5[df5['txn_year']==yr].sort_values('txn_month_num')
+    sub = df5[df5['txn_year'] == yr].sort_values('txn_month_num')
     vals = [None]*12
     for _, row in sub.iterrows():
-        vals[int(row['txn_month_num'])-1] = round(float(row['dispute_rate_7d']),2) if pd.notna(row['dispute_rate_7d']) else None
+        idx = int(row['txn_month_num']) - 1
+        vals[idx] = round(float(row['dispute_rate_7d']), 2) if pd.notna(row['dispute_rate_7d']) else None
     yoy_series[int(yr)] = vals
-yr_colors = {yr:c for yr,c in zip(sorted(yoy_series.keys()),['#2563eb','#16a34a','#d97706','#111827','#dc2626','#7c3aed'])}
 
+# ── Tab 6 summary data ────────────────────────────────────────────────────────
+# MoM/YoY for %UT and %EA are absolute values (prior month / prior year values)
 summary = [
     {'metric':'7d Dispute $ Rate',  'cur':s1_cur,  'mom':s1_mom,  'yoy':s1_yoy,  'py':s1_py},
     {'metric':'7d Dispute # Rate',  'cur':s4_cur,  'mom':s4_mom,  'yoy':s4_yoy,  'py':s4_py},
@@ -114,211 +199,485 @@ summary = [
     {'metric':'Approval ($ Rate)',  'cur':s3_dlr_cur,'mom':s3_dlr_mom,'yoy':s3_dlr_yoy,'py':s3_dlr_py},
 ]
 
-# ── Helpers ───────────────────────────────────────────────────────────────────
-def js_list(a):  return '['+','.join('null' if v is None else str(v) for v in a)+']'
-def js_sl(a):    return '['+','.join(f'"{v}"' for v in a)+']'
+# ── YoY palette ───────────────────────────────────────────────────────────────
+yr_colors = {yr: c for yr, c in zip(sorted(yoy_years),
+    ['#2563eb','#16a34a','#d97706','#111827','#dc2626','#7c3aed'])}
 
-def color_std(val):
+# ═════════════════════════════════════════════════════════════════════════════
+# HTML GENERATION
+# ═════════════════════════════════════════════════════════════════════════════
+
+def js_list(arr):
+    return '[' + ','.join('null' if v is None else str(v) for v in arr) + ']'
+
+def js_str_list(arr):
+    return '[' + ','.join(f'"{v}"' for v in arr) + ']'
+
+def color_mom_yoy(val):
+    """Returns inline style color for MoM/YoY — red=up, green=down."""
+    if val == 'N/A' or not val: return ''
     try:
-        n = float(str(val).replace('%','').replace('+','').replace(' bps',''))
-        if n > 0: return 'color:#dc2626;font-weight:600'
-        if n < 0: return 'color:#16a34a;font-weight:600'
+        num = float(val.replace('%','').replace('+','').replace(' bps',''))
+        if num > 0:  return 'color:#dc2626;font-weight:600'
+        if num < 0:  return 'color:#16a34a;font-weight:600'
     except: pass
     return 'font-weight:600'
 
-def color_approv(val):  # approval rate up = red (more losses)
-    return color_std(val)
+def color_approv(val):
+    """Approval rate: up = red (more payouts = bad)."""
+    if val == 'N/A' or not val: return ''
+    try:
+        num = float(val.replace('%','').replace('+','').replace(' bps',''))
+        if num > 0: return 'color:#dc2626;font-weight:600'
+        if num < 0: return 'color:#16a34a;font-weight:600'
+    except: pass
+    return 'font-weight:600'
 
-def stat(label, val, style=''):
-    return f'<div class="stat"><div class="stat-label">{label}</div><div class="stat-value" style="color:#1f2937;font-size:20px;font-weight:700;{style}">{val}</div></div>'
-
-def stat_c(label, val, fn):
-    return f'<div class="stat"><div class="stat-label">{label}</div><div class="stat-value" style="{fn(val)};font-size:20px;font-weight:700">{val}</div></div>'
-
-def pivot2_html():
-    rows=''
-    for _,r in df2.iterrows():
-        rows+=f"<tr><td>{str(r['trxn_month'])[:10]}</td><td>{pct_abs(r['ea'])}</td><td>{pct_abs(r['non_reg'])}</td><td>0.0000%</td><td>{pct_abs(r['ut'])}</td><td>{pct_abs(r['grand_total'])}</td><td>{pct_abs(r['pct_ut'])}</td><td>{pct_abs(r['pct_ea_nonreg'])}</td></tr>"
-    gt=df2['grand_total'].sum()
-    rows+=f'<tr class="tr"><td>Grand Total</td><td>{pct_abs(df2["ea"].sum())}</td><td>{pct_abs(df2["non_reg"].sum())}</td><td>0.0000%</td><td>{pct_abs(df2["ut"].sum())}</td><td>{pct_abs(gt)}</td><td>{pct_abs(df2["ut"].sum()/gt)}</td><td>{pct_abs((df2["ea"].sum()+df2["non_reg"].sum())/gt)}</td></tr>'
+def pivot2_rows_html():
+    rows = ''
+    for r in pivot2:
+        rows += f"<tr><td>{r['month']}</td><td>{r['ea']}</td><td>{r['non_reg']}</td><td>{r['not_d']}</td><td>{r['ut']}</td><td>{r['total']}</td><td>{r['pct_ut']}</td><td>{r['pct_ea']}</td></tr>\n"
+    ea_tot = pct_abs(df2['ea'].sum()); nr_tot = pct_abs(df2['non_reg'].sum())
+    ut_tot = pct_abs(df2['ut'].sum()); gt_tot = pct_abs(df2['grand_total'].sum())
+    pcut_tot = pct_abs(df2['ut'].sum()/df2['grand_total'].sum())
+    pcea_tot = pct_abs((df2['ea'].sum()+df2['non_reg'].sum())/df2['grand_total'].sum())
+    rows += f'<tr class="total-row"><td>Grand Total</td><td>{ea_tot}</td><td>{nr_tot}</td><td>0.0000%</td><td>{ut_tot}</td><td>{gt_tot}</td><td>{pcut_tot}</td><td>{pcea_tot}</td></tr>'
     return rows
 
-def pivot3_html(kind):
-    rows=''
-    for _,r in df3.iterrows():
-        if kind=='$': rows+=f"<tr><td>{str(r['resolution_month'])[:10]}</td><td>{dollar(r['approve_amt'])}</td><td>{dollar(r['deny_amt'])}</td><td>{dollar(r['total_amt'])}</td><td>{pct_abs(r['approval_rate_dlr'],0)}</td></tr>"
-        else:         rows+=f"<tr><td>{str(r['resolution_month'])[:10]}</td><td>{fmt_int(r['approve_cnt'])}</td><td>{fmt_int(r['deny_cnt'])}</td><td>{fmt_int(r['total_cnt'])}</td><td>{pct_abs(r['approval_rate_cnt'],0)}</td></tr>"
-    if kind=='$': rows+=f'<tr class="tr"><td>Grand Total</td><td>{dollar(df3["approve_amt"].sum())}</td><td>{dollar(df3["deny_amt"].sum())}</td><td>{dollar(df3["total_amt"].sum())}</td><td>{pct_abs(df3["approve_amt"].sum()/df3["total_amt"].sum(),0)}</td></tr>'
-    else:         rows+=f'<tr class="tr"><td>Grand Total</td><td>{fmt_int(df3["approve_cnt"].sum())}</td><td>{fmt_int(df3["deny_cnt"].sum())}</td><td>{fmt_int(df3["total_cnt"].sum())}</td><td>{pct_abs(df3["approve_cnt"].sum()/df3["total_cnt"].sum(),0)}</td></tr>'
+def pivot3_rows_html(kind):
+    rows = ''
+    for r in pivot3:
+        if kind == '$':
+            rows += f"<tr><td>{r['month']}</td><td>{r['app_amt']}</td><td>{r['den_amt']}</td><td>{r['tot_amt']}</td><td>{r['rate_d']}</td></tr>\n"
+        else:
+            rows += f"<tr><td>{r['month']}</td><td>{r['app_cnt']}</td><td>{r['den_cnt']}</td><td>{r['tot_cnt']}</td><td>{r['rate_c']}</td></tr>\n"
+    t = tot3
+    if kind == '$':
+        rows += f'<tr class="total-row"><td>Grand Total</td><td>{t["app_amt"]}</td><td>{t["den_amt"]}</td><td>{t["tot_amt"]}</td><td>{t["rate_d"]}</td></tr>'
+    else:
+        rows += f'<tr class="total-row"><td>Grand Total</td><td>{t["app_cnt"]}</td><td>{t["den_cnt"]}</td><td>{t["tot_cnt"]}</td><td>{t["rate_c"]}</td></tr>'
     return rows
 
-def pivot4_html():
-    rows=''
-    for _,r in df4.iterrows():
-        rows+=f"<tr><td>{str(r['trxn_month'])[:10]}</td><td>{fmt_int(r['dispute_7d_cnt'])}</td><td>{fmt_int(r['trxn_cnt'])}</td><td>{dollar(r['disputed_amt'])}</td><td>${float(r['trxn_amt'])/1e9:.1f}B</td><td>{float(r['dispute_rate_dlr'])*100:.4f}%</td><td>{float(r['dispute_rate_cnt_bps']):.2f} bps</td></tr>"
+def pivot4_rows_html():
+    rows = ''
+    for r in pivot4:
+        rows += f"<tr><td>{r['month']}</td><td>{r['cnt7d']}</td><td>{r['tcnt']}</td><td>{r['damt']}</td><td>{r['tamt']}</td><td>{r['rdlr']}</td><td>{r['rbps']}</td></tr>\n"
     return rows
 
-def summary_html():
-    rows=''
+def narrative_html():
+    rows = [
+        ('7d Dispute $ Rate',   '7d_dispute_dollar'),
+        ('7d Dispute # Rate',   '7d_dispute_count'),
+        ('% UT',                'pct_ut'),
+        ('% EA / Non-reg',      'pct_ea'),
+        ('Approval (# Rate)',   'approval_count'),
+        ('Approval ($ Rate)',   'approval_dollar'),
+    ]
+    cards = ''
+    for label, key in rows:
+        n = NARRATIVE[key]
+        icon  = HEALTH_ICON[n['health']]
+        color = HEALTH_COLOR[n['health']]
+        cards += f"""<div style="background:white;border:1px solid #e5e7eb;border-radius:8px;padding:16px 20px;margin-bottom:12px">
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+            <span style="font-weight:700;font-size:13px;color:#1f2937">{label}</span>
+            <span style="font-size:13px">{icon}</span>
+            <span style="font-size:11px;font-weight:600;color:{color};text-transform:uppercase;letter-spacing:.3px">{n['health'].title()}</span>
+          </div>
+          <p style="font-size:12.5px;color:#374151;line-height:1.6;margin-bottom:8px">{n['commentary']}</p>
+          <p style="font-size:12px;color:#6b7280;line-height:1.5">
+            <span style="font-weight:600;color:#374151">Forward Looking:</span> {n['forward_looking']}
+          </p>
+        </div>"""
+    return cards
+
+def summary_rows_html():
+    rows = ''
     for r in summary:
-        m=r['metric']; is_pct='%' in m and 'Approval' not in m; is_app='Approval' in m
-        if is_pct:   ms=ys='font-weight:600'
-        elif is_app: ms=color_approv(r['mom']); ys=color_approv(r['yoy'])
-        else:        ms=color_std(r['mom']);     ys=color_std(r['yoy'])
-        rows+=f"<tr><td>{m}</td><td>{r['cur']}</td><td style='{ms}'>{r['mom']}</td><td style='{ys}'>{r['yoy']}</td><td>{r['py']}</td></tr>"
+        m = r['metric']; cur = r['cur']; mom = r['mom']; yoy = r['yoy']; py = r['py']
+        is_pct    = m.startswith('%')        # % UT and % EA/Non-reg — neutral, no color
+        is_approv = 'Approval' in m          # Approval rows — red if up, green if down
+        if is_pct:
+            mom_style = yoy_style = 'font-weight:600'
+        elif is_approv:
+            mom_style = color_approv(mom);   yoy_style = color_approv(yoy)
+        else:
+            mom_style = color_mom_yoy(mom);  yoy_style = color_mom_yoy(yoy)
+        rows += f"""<tr>
+          <td>{m}</td><td>{cur}</td>
+          <td style="{mom_style}">{mom}</td>
+          <td style="{yoy_style}">{yoy}</td>
+          <td>{py}</td>
+        </tr>\n"""
     return rows
 
-def yoy_js():
-    parts=[]
+def yoy_datasets_js():
+    parts = []
     for yr in sorted(yoy_series.keys()):
-        col=yr_colors.get(yr,'#999')
-        parts.append(f'{{label:"{yr}",data:{js_list(yoy_series[yr])},borderColor:"{col}",backgroundColor:"transparent",pointRadius:4}}')
-    return '['+','.join(parts)+']'
+        col = yr_colors.get(yr, '#999')
+        data = js_list(yoy_series[yr])
+        parts.append(f'{{label:"{yr}",data:{data},borderColor:"{col}",backgroundColor:"transparent",pointRadius:4}}')
+    return '[' + ','.join(parts) + ']'
 
-def t1_table():
-    rows=''
-    for _,r in df1.iterrows():
-        def f(col): return str(round(float(r[col]),2)) if col in r and pd.notna(r[col]) else '—'
-        rows+=f"<tr><td>{r['txn_month']}</td><td>{int(r['mth_offset'])}</td><td>{f('dispute_rate_7d')}</td><td>{f('dispute_rate_14d')}</td><td>{f('dispute_rate_30d')}</td><td>{f('dispute_rate_45d')}</td><td>{f('dispute_rate_60d')}</td><td>{f('dispute_rate_90d')}</td><td>{f('dispute_rate_120d')}</td><td>{f('dispute_rate_150d')}</td><td>{f('dispute_rate_180d')}</td></tr>"
-    return rows
+def stat_cell(label, val, style=''):
+    return f'<div class="stat"><div class="stat-label">{label}</div><div class="stat-value neutral" style="{style}">{val}</div></div>'
+
+def stat_cell_colored(label, val, color_fn):
+    style = color_fn(val)
+    return f'<div class="stat"><div class="stat-label">{label}</div><div class="stat-value" style="{style}">{val}</div></div>'
+
+# ── NARRATIVE — update this section monthly after researching Slack + docs ────
+# Sources: T&S Portfolio Metrics Review, Dispute Risk 2026 Tracker, Slack #dispute-risk-analytics
+# Current narrative reflects: April 2026 performance
+
+NARRATIVE = {
+    '7d_dispute_dollar': {
+        'health': 'yellow',
+        'commentary': (
+            'The dispute rate was high in March due to tax seasonality, late notification and scam attacks. '
+            'It has come down in April (−9.5% MoM), though the YoY increase (+12.8%) reflects an elevated scam '
+            'environment vs. last year. Dispute loss for April stands at 7.8 bps (~18% above goal), primarily '
+            'driven by ~$17MM in Chime impersonation/scam claims filed since Jan 2026. '
+            'Weekly monitoring (w/e 5/18) shows a fresh uptick: 7D rate moved from 17bps → 19bps, '
+            'driven by 60K Debit EA and 15K Instant Transfer losses.'
+        ),
+        'forward_looking': (
+            'Account closures ongoing for scam-linked users (dormancy + rapid P2P funding patterns). '
+            'Coinify and MRCR merchants blocked. Scam loss rates declining sharply in May as SWAT routing and '
+            'bulk closures take effect. '
+            'mFPF v2 migration for self-serve disputes live (#risk-rule-requests) — expected loss improvement. '
+            'Fast Travel Scan ID experiment live: targets scam/UT dispute rate reduction for fast-travel-flagged logins. '
+            'Card Face Auth experiment (Incode) in flight for high-risk transactions.'
+        )
+    },
+    '7d_dispute_count': {
+        'health': 'yellow',
+        'commentary': (
+            'Count-based rate slightly down MoM (−0.43%) but elevated YoY (+23.93%), reflecting broader '
+            'increase in small-dollar disputes. SPF (Semi-Professional Fraud) is the primary driver — '
+            '36% of scam cases, 49% of disputed dollars, 73% of all disputes filed. '
+            'ANI linkage analysis confirms organized/third-party abuse rather than standalone ATO. '
+            'HIGH_RISK_Routing_Policy_V7 and V1.5K deployed (#risk-rule-requests) to route high-risk disputes to SWAT.'
+        ),
+        'forward_looking': (
+            'ZTA auto-resolution at 34.87% (exceeding 2026 target). '
+            'P2P scam questionnaire & M2G interstitial experiment active — "during-the-scam" intervention '
+            'expected to reduce UT scam filing rates. '
+            'AA closure SOP updated: closing all FPF users with >$500 disputed. '
+            'Google velocity rule volume dropped ~99% indicating effective controls on Google-related fraud.'
+        )
+    },
+    'pct_ut': {
+        'health': 'green',
+        'commentary': (
+            'UT rates largely stable with a slight uptick from last month (71.7% → 72.4%), '
+            'driven by tax seasonality and ongoing fraud trends. '
+            'Share in line with prior year (72.0% Apr-25). '
+            'SPF typology dominates scam UT claims; late notification disputes remain elevated.'
+        ),
+        'forward_looking': (
+            'Tax season effects expected to normalize into summer. '
+            'P2P FaceAuth (Q1 ship) and scam interstitial questionnaire experiment underway to reduce UT scam approvals. '
+            'New UT SOP signals being incorporated into future SWAT genpop SOP. '
+            '3DS Shift-Deny-to-OOB experiment in flight — converting 3DS denials to in-app auth; '
+            'monitoring for dispute rate impact on newly-approved transactions.'
+        )
+    },
+    'pct_ea': {
+        'health': 'green',
+        'commentary': (
+            'EA/Non-reg share slightly down from last month (28.3% → 27.6%), with UT taking a larger share. '
+            'Non-reg FC losses (primarily NRGS — non-receipt of goods/services) remain elevated; '
+            'Forge GA mid-April (~50% non-reg coverage) identified as contributing factor. '
+            'CB filed on 75–90% of NRGS losses.'
+        ),
+        'forward_looking': (
+            'Monitoring NRGS SOP intake change (stricter proof-of-merchant-contact) for potential loophole exploitation. '
+            'Merchant evidence quality in pre-arb under review. '
+            'mFPF v2 migration (self-serve disputes) may affect EA approval rates — monitoring in progress. '
+            'MCD hold reduction experiments (DDer and non-DDer) active; loss rate monitoring in place.'
+        )
+    },
+    'approval_count': {
+        'health': 'green',
+        'commentary': (
+            'Unit approval rate incremented (+4.9% MoM) to 50%, partly driven by higher approvals on '
+            'scam claims and non-regulated disputes. ~$5MM in fake scam claim credits issued YTD 2026. '
+            'Approval rate elevated vs. last year (+10.0% YoY). '
+            'HIGH_RISK_Routing_Policy_V7 live: routing more high-risk disputes to SWAT which has lower approval rates.'
+        ),
+        'forward_looking': (
+            'New UT SOP will impact approval rates post rollout. '
+            'ZTA at 34.87% auto-resolution (exceeding 2026 target). '
+            'Watch: 3DS Step-Up Choice vs OTP experiment and Shift-Deny-to-OOB — both aimed at higher '
+            'approvals/spend; could modestly increase dispute volumes on newly-approved transactions. '
+            'MyPay Higher Limits ($1000 cap) experiment active for low-risk members — monitoring for NB exposure.'
+        )
+    },
+    'approval_dollar': {
+        'health': 'green',
+        'commentary': (
+            'Dollar approval rate increased notably MoM (+16%), driven by large scam claim approvals and higher '
+            'credits on non-regulated claims. $ approval rate increase outpaces unit rate, indicating '
+            'higher-value claims being approved. Loss rate (resolution week 5/17) increased to 11.0% '
+            'from 10.4% the prior week, mainly 60K Debit EA and 15K Instant Transfer.'
+        ),
+        'forward_looking': (
+            'Aggressive actions to disrupt bad actors: bulk closures, SWAT routing, ANI-based signals. '
+            'Upstream controls being strengthened: P2P FaceAuth, contactless model, EMV fallback. '
+            'P2P scam SOP updates pending bank approval. '
+            'Watch: Negative Balance Pre-Closure Notice experiment showed stat-sig reduction in NB closures — '
+            'may modestly affect dispute patterns for members kept active longer.'
+        )
+    }
+}
+
+HEALTH_ICON = {'green': '🟢', 'yellow': '🟡', 'red': '🔴'}
+HEALTH_COLOR = {'green': '#16a34a', 'yellow': '#ca8a04', 'red': '#dc2626'}
 
 run_date = pd.Timestamp.now().strftime('%Y-%m-%d %H:%M')
 
-# ── HTML ──────────────────────────────────────────────────────────────────────
 html = f"""<!DOCTYPE html>
-<html lang="en"><head><meta charset="UTF-8"><title>T&S Metrics</title>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>T&S Metrics — Live Preview</title>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <style>
-*{{box-sizing:border-box;margin:0;padding:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif}}
-body{{background:#f5f6fa}}
-header{{background:#2d1b69;color:white;padding:14px 28px;display:flex;align-items:center;gap:12px}}
-header .logo{{font-size:20px;font-weight:700}} header .title{{font-size:15px;color:#c9b8f5}}
-header .rd{{margin-left:auto;font-size:11px;color:#a78bfa}}
-.tabs{{background:white;border-bottom:1px solid #e2e5f0;padding:0 24px;display:flex;gap:2px;overflow-x:auto}}
-.tab{{padding:12px 16px;font-size:12.5px;font-weight:500;color:#6b7280;cursor:pointer;border-bottom:2px solid transparent;white-space:nowrap}}
-.tab.active{{color:#2d1b69;border-bottom-color:#7c3aed;font-weight:600}}
-.tab:hover:not(.active){{color:#374151;background:#f9fafb}}
-.content{{display:none;padding:24px;max-width:1300px;margin:0 auto}}.content.active{{display:block}}
-.stit{{font-size:14px;font-weight:600;color:#374151;margin-bottom:12px;padding-bottom:6px;border-bottom:1px solid #e5e7eb}}
-.card{{background:white;border-radius:8px;border:1px solid #e5e7eb;padding:20px;margin-bottom:20px;box-shadow:0 1px 3px rgba(0,0,0,.04)}}
-.cw{{position:relative;height:300px}}
-table{{width:100%;border-collapse:collapse;font-size:12.5px}}
-th{{background:#f8f9fc;color:#6b7280;font-weight:600;text-align:right;padding:7px 12px;border-bottom:1px solid #e5e7eb;font-size:11px;text-transform:uppercase}}
-th:first-child{{text-align:left}} td{{padding:6px 12px;border-bottom:1px solid #f3f4f6;text-align:right;color:#374151}}
-td:first-child{{text-align:left;font-weight:500}} tr:hover td{{background:#f9fafb}}
-tr.tr td{{font-weight:700;background:#f8f9fc;border-top:1px solid #d1d5db}}
-.sr{{display:flex;gap:12px;margin-bottom:20px;flex-wrap:wrap}}
-.stat{{background:white;border-radius:8px;border:1px solid #e5e7eb;padding:14px 18px;flex:1;min-width:130px}}
-.stat-label{{font-size:10.5px;color:#9ca3af;text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px}}
-.two{{display:grid;grid-template-columns:1fr 1fr;gap:20px}}
-.smtab th{{background:#1e293b;color:white;font-size:12px;padding:10px 14px;text-align:center}}
-.smtab th:first-child{{text-align:left}} .smtab td{{text-align:center;padding:9px 14px}}
-.smtab td:first-child{{text-align:left;font-weight:600}} .smtab tr:nth-child(even) td{{background:#f8fafc}}
-.mg{{display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px;margin-top:20px}}
-.mc{{background:white;border-radius:6px;border:1px solid #e5e7eb;padding:14px}}
-.mt{{font-size:11px;font-weight:600;color:#6b7280;margin-bottom:8px}} .mw{{position:relative;height:160px}}
-</style></head><body>
-<header><div class="logo">⬡ hex</div><div class="title">T&S Metrics</div><div class="rd">Generated: {run_date}</div></header>
+  *{{box-sizing:border-box;margin:0;padding:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif}}
+  body{{background:#f5f6fa;color:#1a1a2e}}
+  header{{background:#2d1b69;color:white;padding:14px 28px;display:flex;align-items:center;gap:12px}}
+  header .logo{{font-size:20px;font-weight:700}} header .title{{font-size:15px;color:#c9b8f5}}
+  header .run-date{{margin-left:auto;font-size:11px;color:#a78bfa}}
+  .tabs{{background:white;border-bottom:1px solid #e2e5f0;padding:0 24px;display:flex;gap:2px;overflow-x:auto}}
+  .tab{{padding:12px 16px;font-size:12.5px;font-weight:500;color:#6b7280;cursor:pointer;border-bottom:2px solid transparent;white-space:nowrap}}
+  .tab.active{{color:#2d1b69;border-bottom-color:#7c3aed;font-weight:600}}
+  .tab:hover:not(.active){{color:#374151;background:#f9fafb}}
+  .content{{display:none;padding:24px;max-width:1300px;margin:0 auto}} .content.active{{display:block}}
+  .section-title{{font-size:14px;font-weight:600;color:#374151;margin-bottom:12px;padding-bottom:6px;border-bottom:1px solid #e5e7eb}}
+  .card{{background:white;border-radius:8px;border:1px solid #e5e7eb;padding:20px;margin-bottom:20px;box-shadow:0 1px 3px rgba(0,0,0,.04)}}
+  .chart-wrap{{position:relative;height:300px}}
+  table{{width:100%;border-collapse:collapse;font-size:12.5px}}
+  th{{background:#f8f9fc;color:#6b7280;font-weight:600;text-align:right;padding:7px 12px;border-bottom:1px solid #e5e7eb;font-size:11px;text-transform:uppercase;letter-spacing:.3px}}
+  th:first-child{{text-align:left}} td{{padding:6px 12px;border-bottom:1px solid #f3f4f6;text-align:right;color:#374151;font-size:12.5px}}
+  td:first-child{{text-align:left;font-weight:500}} tr:last-child td{{border-bottom:none}}
+  tr:hover td{{background:#f9fafb}} tr.total-row td{{font-weight:700;background:#f8f9fc;border-top:1px solid #d1d5db}}
+  .stat-row{{display:flex;gap:12px;margin-bottom:20px;flex-wrap:wrap}}
+  .stat{{background:white;border-radius:8px;border:1px solid #e5e7eb;padding:14px 18px;flex:1;min-width:130px}}
+  .stat-label{{font-size:10.5px;color:#9ca3af;text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px}}
+  .stat-value{{font-size:20px;font-weight:700;color:#1f2937}}
+  .stat-value.neutral{{color:#1f2937}}
+  .two-col{{display:grid;grid-template-columns:1fr 1fr;gap:20px}}
+  .summary-table th{{background:#1e293b;color:white;font-size:12px;padding:10px 14px;text-align:center}}
+  .summary-table th:first-child{{text-align:left}}
+  .summary-table td{{text-align:center;padding:9px 14px}}
+  .summary-table td:first-child{{text-align:left;font-weight:600}}
+  .summary-table tr:nth-child(even) td{{background:#f8fafc}}
+  .mini-grid{{display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px;margin-top:20px}}
+  .mini-card{{background:white;border-radius:6px;border:1px solid #e5e7eb;padding:14px}}
+  .mini-title{{font-size:11px;font-weight:600;color:#6b7280;margin-bottom:8px}}
+  .mini-chart-wrap{{position:relative;height:160px}}
+</style>
+</head>
+<body>
+<header>
+  <div class="logo">⬡ hex</div>
+  <div class="title">T&S Metrics</div>
+  <div class="run-date">Generated: {run_date}</div>
+</header>
 <div class="tabs">
-  <div class="tab active" onclick="showTab(0)">1. 7d Dispute Rate $</div>
-  <div class="tab" onclick="showTab(1)">2. Rate by Reason Type</div>
-  <div class="tab" onclick="showTab(2)">3. Approve / Deny</div>
-  <div class="tab" onclick="showTab(3)">4. 7d Unit Rate</div>
-  <div class="tab" onclick="showTab(4)">5. YoY Trend</div>
-  <div class="tab" onclick="showTab(5)">6. Summary</div>
+  <div class="tab active"  onclick="showTab(0)">1. 7d Dispute Rate $</div>
+  <div class="tab"         onclick="showTab(1)">2. Rate by Reason Type</div>
+  <div class="tab"         onclick="showTab(2)">3. Approve / Deny</div>
+  <div class="tab"         onclick="showTab(3)">4. 7d Unit Rate</div>
+  <div class="tab"         onclick="showTab(4)">5. YoY Trend</div>
+  <div class="tab"         onclick="showTab(5)">6. Summary</div>
 </div>
 
+<!-- TAB 1 -->
 <div class="content active" id="tab0">
-  <div class="sr">{stat("Current Month",s1_cur)}{stat_c("YoY",s1_yoy,color_std)}{stat_c("MoM",s1_mom,color_std)}{stat("Last Year Same Month",s1_py)}</div>
-  <div class="card"><div class="stit">7d Dispute Rate Trend (bps)</div><div class="cw"><canvas id="c1"></canvas></div></div>
-  <div class="card"><div class="stit">All Seasoning Windows</div><div style="overflow-x:auto"><table>
-    <tr><th>Month</th><th>Offset</th><th>7d</th><th>14d</th><th>30d</th><th>45d</th><th>60d</th><th>90d</th><th>120d</th><th>150d</th><th>180d</th></tr>
-    {t1_table()}
-  </table></div></div>
+  <div class="stat-row">
+    {stat_cell("Current Month", s1_cur)}
+    {stat_cell_colored("YoY", s1_yoy, color_mom_yoy)}
+    {stat_cell_colored("MoM", s1_mom, color_mom_yoy)}
+    {stat_cell("Last Year Same Month", s1_py)}
+  </div>
+  <div class="card"><div class="section-title">7d Dispute Rate Trend (bps)</div>
+    <div class="chart-wrap"><canvas id="c1"></canvas></div></div>
+  <div class="card"><div class="section-title">All Seasoning Windows</div>
+    <div style="overflow-x:auto"><table>
+      <tr><th>Month</th><th>Offset</th><th>7d</th><th>14d</th><th>30d</th><th>45d</th><th>60d</th><th>90d</th><th>120d</th><th>150d</th><th>180d</th></tr>
+      {''.join(f"<tr><td>{r['txn_month']}</td><td>{int(r['mth_offset'])}</td><td>{round(float(r['dispute_rate_7d']),2) if pd.notna(r.get('dispute_rate_7d')) else '—'}</td><td>{round(float(r['dispute_rate_14d']),2) if pd.notna(r.get('dispute_rate_14d')) else '—'}</td><td>{round(float(r['dispute_rate_30d']),2) if pd.notna(r.get('dispute_rate_30d')) else '—'}</td><td>{round(float(r['dispute_rate_45d']),2) if pd.notna(r.get('dispute_rate_45d')) else '—'}</td><td>{round(float(r['dispute_rate_60d']),2) if pd.notna(r.get('dispute_rate_60d')) else '—'}</td><td>{round(float(r['dispute_rate_90d']),2) if pd.notna(r.get('dispute_rate_90d')) else '—'}</td><td>{round(float(r['dispute_rate_120d']),2) if pd.notna(r.get('dispute_rate_120d')) else '—'}</td><td>{round(float(r['dispute_rate_150d']),2) if pd.notna(r.get('dispute_rate_150d')) else '—'}</td><td>{round(float(r['dispute_rate_180d']),2) if pd.notna(r.get('dispute_rate_180d')) else '—'}</td></tr>" for _, r in df1.iterrows())}
+    </table></div></div>
 </div>
 
+<!-- TAB 2 -->
 <div class="content" id="tab1">
-  <div class="sr">{stat("% UT — Current",s2_ut_cur)}{stat("% UT — Last Month",s2_ut_lm)}{stat("% UT — Last Year Same Month",s2_ut_py)}</div>
-  <div class="sr">{stat("% EA/NonReg — Current",s2_ea_cur)}{stat("% EA/NonReg — Last Month",s2_ea_lm)}{stat("% EA/NonReg — Last Year Same Month",s2_ea_py)}</div>
-  <div class="card"><div class="stit">7d Dispute Rate by Reason Type — Last 13 Mature Months</div><div style="overflow-x:auto"><table>
-    <tr><th>Month</th><th>EA</th><th>Non-reg</th><th>not_disputed</th><th>UT</th><th>Grand Total</th><th>% UT</th><th>% EA/NonReg</th></tr>
-    {pivot2_html()}
-  </table></div></div>
-  <div class="two">
-    <div class="card"><div class="stit">UT 7d Dispute Rate</div><div class="cw"><canvas id="c2a"></canvas></div></div>
-    <div class="card"><div class="stit">EA + Non-reg 7d Dispute Rate</div><div class="cw"><canvas id="c2b"></canvas></div></div>
+  <div class="stat-row">
+    {stat_cell("% UT — Current", s2_ut_cur)}
+    {stat_cell("% UT — Last Month", s2_ut_lm)}
+    {stat_cell("% UT — Last Year Same Month", s2_ut_py)}
+  </div>
+  <div class="stat-row">
+    {stat_cell("% EA/NonReg — Current", s2_ea_cur)}
+    {stat_cell("% EA/NonReg — Last Month", s2_ea_lm)}
+    {stat_cell("% EA/NonReg — Last Year Same Month", s2_ea_py)}
+  </div>
+  <div class="card"><div class="section-title">7d Dispute Rate by Reason Type — Last 13 Mature Months</div>
+    <div style="overflow-x:auto"><table>
+      <tr><th>Month</th><th>EA</th><th>Non-reg</th><th>not_disputed</th><th>UT</th><th>Grand Total</th><th>% UT</th><th>% EA/NonReg</th></tr>
+      {pivot2_rows_html()}
+    </table></div></div>
+  <div class="two-col">
+    <div class="card"><div class="section-title">UT 7d Dispute Rate</div>
+      <div class="chart-wrap"><canvas id="c2a"></canvas></div></div>
+    <div class="card"><div class="section-title">EA + Non-reg 7d Dispute Rate</div>
+      <div class="chart-wrap"><canvas id="c2b"></canvas></div></div>
   </div>
 </div>
 
+<!-- TAB 3 -->
 <div class="content" id="tab2">
-  <div class="sr">{stat_c("$ Approval — YoY",s3_dlr_yoy,color_approv)}{stat_c("$ Approval — MoM",s3_dlr_mom,color_approv)}{stat("$ Approval — Current",s3_dlr_cur)}{stat("$ Approval — Last Year",s3_dlr_py)}</div>
-  <div class="sr">{stat_c("Unit Approval — YoY",s3_cnt_yoy,color_approv)}{stat_c("Unit Approval — MoM",s3_cnt_mom,color_approv)}{stat("Unit Approval — Current",s3_cnt_cur)}{stat("Unit Approval — Last Year",s3_cnt_py)}</div>
-  <div class="two">
-    <div class="card"><div class="stit">Dispute Amount — Approve / Deny ($)</div><table>
-      <tr><th>Resolution Month</th><th>Approve</th><th>Deny</th><th>Grand Total</th><th>Approval Rate</th></tr>{pivot3_html('$')}</table></div>
-    <div class="card"><div class="stit">Dispute Count — Approve / Deny (Units)</div><table>
-      <tr><th>Resolution Month</th><th>Approve</th><th>Deny</th><th>Grand Total</th><th>Approval Rate</th></tr>{pivot3_html('#')}</table></div>
+  <div class="stat-row">
+    {stat_cell_colored("$ Approval — YoY", s3_dlr_yoy, color_approv)}
+    {stat_cell_colored("$ Approval — MoM", s3_dlr_mom, color_approv)}
+    {stat_cell("$ Approval — Current", s3_dlr_cur)}
+    {stat_cell("$ Approval — Last Year Same Month", s3_dlr_py)}
   </div>
-  <div class="two">
-    <div class="card"><div class="stit">$ Approval Rate Trend</div><div class="cw"><canvas id="c3a"></canvas></div></div>
-    <div class="card"><div class="stit">Unit Approval Rate Trend</div><div class="cw"><canvas id="c3b"></canvas></div></div>
+  <div class="stat-row">
+    {stat_cell_colored("Unit Approval — YoY", s3_cnt_yoy, color_approv)}
+    {stat_cell_colored("Unit Approval — MoM", s3_cnt_mom, color_approv)}
+    {stat_cell("Unit Approval — Current", s3_cnt_cur)}
+    {stat_cell("Unit Approval — Last Year Same Month", s3_cnt_py)}
+  </div>
+  <div class="two-col">
+    <div class="card"><div class="section-title">Dispute Amount — Approve / Deny ($)</div><table>
+      <tr><th>Resolution Month</th><th>Approve</th><th>Deny</th><th>Grand Total</th><th>Approval Rate</th></tr>
+      {pivot3_rows_html('$')}
+    </table></div>
+    <div class="card"><div class="section-title">Dispute Count — Approve / Deny (Units)</div><table>
+      <tr><th>Resolution Month</th><th>Approve</th><th>Deny</th><th>Grand Total</th><th>Approval Rate</th></tr>
+      {pivot3_rows_html('#')}
+    </table></div>
+  </div>
+  <div class="two-col">
+    <div class="card"><div class="section-title">$ Approval Rate Trend</div>
+      <div class="chart-wrap"><canvas id="c3a"></canvas></div></div>
+    <div class="card"><div class="section-title">Unit Approval Rate Trend</div>
+      <div class="chart-wrap"><canvas id="c3b"></canvas></div></div>
   </div>
 </div>
 
+<!-- TAB 4 -->
 <div class="content" id="tab3">
-  <div class="sr">{stat("Current Month",s4_cur)}{stat_c("MoM",s4_mom,color_std)}{stat_c("YoY",s4_yoy,color_std)}{stat("Last Year Same Month",s4_py)}</div>
-  <div class="card"><div class="stit">7d Dispute Unit Rate Trend (bps)</div><div class="cw"><canvas id="c4"></canvas></div></div>
-  <div class="card"><div class="stit">Unit Rate Data</div><table>
+  <div class="stat-row">
+    {stat_cell("Current Month", s4_cur)}
+    {stat_cell_colored("MoM", s4_mom, color_mom_yoy)}
+    {stat_cell_colored("YoY", s4_yoy, color_mom_yoy)}
+    {stat_cell("Last Year Same Month", s4_py)}
+  </div>
+  <div class="card"><div class="section-title">7d Dispute Unit Rate Trend (bps)</div>
+    <div class="chart-wrap"><canvas id="c4"></canvas></div></div>
+  <div class="card"><div class="section-title">Unit Rate Data</div><table>
     <tr><th>Month</th><th>Dispute 7d #</th><th>Trxn #</th><th>Disputed $</th><th>Trxn $</th><th>Rate ($)</th><th>Rate (bps)</th></tr>
-    {pivot4_html()}
+    {pivot4_rows_html()}
   </table></div>
 </div>
 
+<!-- TAB 5 -->
 <div class="content" id="tab4">
-  <div class="card"><div class="stit">Year-wise Monthly Trend of 7d $ Dispute Rate (bps)</div>
-    <div class="cw" style="height:380px"><canvas id="c5"></canvas></div></div>
+  <div class="card"><div class="section-title">Year-wise Monthly Trend of 7d $ Dispute Rate (bps)</div>
+    <div class="chart-wrap" style="height:380px"><canvas id="c5"></canvas></div></div>
 </div>
 
+<!-- TAB 6 -->
 <div class="content" id="tab5">
-  <div class="card"><div class="stit">Metrics Summary</div>
-    <table class="smtab"><tr><th>Metric</th><th>Current Month</th><th>MoM</th><th>YoY</th><th>Same Month, Last Year</th></tr>
-    {summary_html()}</table></div>
-  <div class="stit" style="margin-top:4px">Trend Charts</div>
-  <div class="mg">
-    <div class="mc"><div class="mt">7d Dispute $ Rate (bps)</div><div class="mw"><canvas id="m1"></canvas></div></div>
-    <div class="mc"><div class="mt">UT Rate</div><div class="mw"><canvas id="m2"></canvas></div></div>
-    <div class="mc"><div class="mt">EA + Non-reg Rate</div><div class="mw"><canvas id="m3"></canvas></div></div>
-    <div class="mc"><div class="mt">$ Approval Rate</div><div class="mw"><canvas id="m4"></canvas></div></div>
-    <div class="mc"><div class="mt">Unit Approval Rate</div><div class="mw"><canvas id="m5"></canvas></div></div>
-    <div class="mc"><div class="mt">7d Unit Rate (bps)</div><div class="mw"><canvas id="m6"></canvas></div></div>
+  <div class="card"><div class="section-title">Metrics Summary (Current Month vs Prior Periods)</div>
+    <table class="summary-table">
+      <tr><th>Metric</th><th>Current Month</th><th>MoM</th><th>YoY</th><th>Same Month, Last Year</th></tr>
+      {summary_rows_html()}
+    </table></div>
+  <div class="card">
+    <div class="section-title">Commentary &amp; Forward Looking — April 2026 Performance</div>
+    <div style="font-size:11px;color:#9ca3af;margin-bottom:14px">
+      Sources: T&amp;S Portfolio Metrics Review · Dispute Risk 2026 Tracker · April 2026 Dispute Uptick Doc · #dispute-risk-analytics
+    </div>
+    {narrative_html()}
+  </div>
+  <div class="section-title" style="margin-top:4px">Trend Charts (for doc sharing)</div>
+  <div class="mini-grid">
+    <div class="mini-card"><div class="mini-title">7d Dispute $ Rate (bps)</div><div class="mini-chart-wrap"><canvas id="m1"></canvas></div></div>
+    <div class="mini-card"><div class="mini-title">UT Rate</div><div class="mini-chart-wrap"><canvas id="m2"></canvas></div></div>
+    <div class="mini-card"><div class="mini-title">EA + Non-reg Rate</div><div class="mini-chart-wrap"><canvas id="m3"></canvas></div></div>
+    <div class="mini-card"><div class="mini-title">$ Approval Rate</div><div class="mini-chart-wrap"><canvas id="m4"></canvas></div></div>
+    <div class="mini-card"><div class="mini-title">Unit Approval Rate</div><div class="mini-chart-wrap"><canvas id="m5"></canvas></div></div>
+    <div class="mini-card"><div class="mini-title">7d Dispute Unit Rate (bps)</div><div class="mini-chart-wrap"><canvas id="m6"></canvas></div></div>
   </div>
 </div>
 
 <script>
-const P='#7c3aed',B='#60a5fa';
-const m14={js_sl(months14)},m13={js_sl(months13)},m13r={js_sl(months13r)},m14u={js_sl(months14u)};
-const d7={js_list(d_7d)},du={js_list(d_ut)},de={js_list(d_ea)},dad={js_list(d_adlr)},dac={js_list(d_acnt)},dub={js_list(d_unit_bps)};
-function lo(leg,yf){{return{{responsive:true,maintainAspectRatio:false,plugins:{{legend:{{display:leg,labels:{{usePointStyle:true,pointStyle:'line',pointStyleWidth:24,font:{{size:12}}}}}},tooltip:{{mode:'index'}}}},scales:{{x:{{grid:{{color:'#f3f4f6'}},ticks:{{font:{{size:11}}}}}},y:{{grid:{{color:'#f3f4f6'}},ticks:{{font:{{size:11}},callback:yf||(v=>v)}}}}}},elements:{{point:{{radius:4}},line:{{tension:0}}}}}};}}
-function mo(){{return{{responsive:true,maintainAspectRatio:false,plugins:{{legend:{{display:false}},tooltip:{{enabled:false}}}},scales:{{x:{{display:false}},y:{{display:false}}}},elements:{{point:{{radius:0}},line:{{tension:0,borderWidth:1.8}}}}}};}}
-function ds(d,c,f){{return{{data:d,borderColor:c,backgroundColor:f?c+'22':'transparent',fill:!!f,pointBackgroundColor:c}};}}
-function md(d){{return{{data:d,borderColor:B,backgroundColor:'transparent',pointBackgroundColor:B}};}}
-new Chart('c1',{{type:'line',data:{{labels:m14,datasets:[{{...ds(d7,P,true),label:'7d Rate (bps)'}}]}},options:lo(true)}});
-new Chart('c2a',{{type:'line',data:{{labels:m13,datasets:[{{...ds(du,'#dc2626',true),label:'UT Rate'}}]}},options:lo(true,v=>v.toFixed(4)+'%')}});
-new Chart('c2b',{{type:'line',data:{{labels:m13,datasets:[{{...ds(de,'#2563eb',true),label:'EA+NonReg'}}]}},options:lo(true,v=>v.toFixed(4)+'%')}});
-new Chart('c3a',{{type:'line',data:{{labels:m13r,datasets:[{{...ds(dad,'#059669',true),label:'$ Approval'}}]}},options:lo(true,v=>(v*100).toFixed(0)+'%')}});
-new Chart('c3b',{{type:'line',data:{{labels:m13r,datasets:[{{...ds(dac,'#d97706',true),label:'Unit Approval'}}]}},options:lo(true,v=>(v*100).toFixed(0)+'%')}});
-new Chart('c4',{{type:'line',data:{{labels:m14u,datasets:[{{...ds(dub,P,true),label:'Unit Rate (bps)'}}]}},options:lo(true,v=>v.toFixed(2)+' bps')}});
-new Chart('c5',{{type:'line',data:{{labels:['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'],datasets:{yoy_js()}}},options:{{responsive:true,maintainAspectRatio:false,plugins:{{legend:{{position:'right',labels:{{usePointStyle:true,pointStyle:'line',pointStyleWidth:24,font:{{size:12}}}}}}}},scales:{{x:{{grid:{{color:'#f3f4f6'}},ticks:{{font:{{size:11}}}}}},y:{{grid:{{color:'#f3f4f6'}},ticks:{{font:{{size:11}}}},title:{{display:true,text:'7d $ Dispute Rate (bps)',font:{{size:11}}}}}}}},elements:{{point:{{radius:4}},line:{{tension:0}}}}}}}});
-['m1','m2','m3','m4','m5','m6'].forEach((id,i)=>{{
-  const data=[dub,du,de,dad,dac,dub][i],labs=[m14u,m13,m13,m13r,m13r,m14u][i];
-  new Chart(id,{{type:'line',data:{{labels:labs,datasets:[md(data)]}},options:mo()}});
-}});
-// fix: m1 uses d7/m14
-new Chart('m1',{{type:'line',data:{{labels:m14,datasets:[md(d7)]}},options:mo()}});
-function showTab(i){{document.querySelectorAll('.tab').forEach((t,j)=>t.classList.toggle('active',i===j));document.querySelectorAll('.content').forEach((c,j)=>c.classList.toggle('active',i===j));}}
-</script></body></html>"""
+const PURPLE='#7c3aed', BLUE='#60a5fa';
+const months14   = {js_str_list(months14)};
+const months13   = {js_str_list(months13)};
+const months13r  = {js_str_list(months13r)};
+const months14u  = {js_str_list(months14u)};
+const d_7d       = {js_list(d_7d)};
+const d_ut       = {js_list(d_ut)};
+const d_ea       = {js_list(d_ea)};
+const d_adlr     = {js_list(d_adlr)};
+const d_acnt     = {js_list(d_acnt)};
+const d_unit_bps = {js_list(d_unit_bps)};
 
-with open(OUT,'w') as f: f.write(html)
+function lineOpts(showLeg, yFmt) {{
+  return {{responsive:true,maintainAspectRatio:false,
+    plugins:{{legend:{{display:showLeg,labels:{{usePointStyle:true,pointStyle:'line',pointStyleWidth:24,font:{{size:12}}}}}},tooltip:{{mode:'index'}}}},
+    scales:{{x:{{grid:{{color:'#f3f4f6'}},ticks:{{font:{{size:11}}}}}},
+             y:{{grid:{{color:'#f3f4f6'}},ticks:{{font:{{size:11}},callback:yFmt||(v=>v)}}}}}},
+    elements:{{point:{{radius:4}},line:{{tension:0}}}}}};
+}}
+function miniOpts() {{
+  return {{responsive:true,maintainAspectRatio:false,
+    plugins:{{legend:{{display:false}},tooltip:{{enabled:false}}}},
+    scales:{{x:{{display:false}},y:{{display:false}}}},
+    elements:{{point:{{radius:0}},line:{{tension:0,borderWidth:1.8}}}}}};
+}}
+function mkDs(data,color,fill) {{
+  return {{data,borderColor:color,backgroundColor:fill?color+'22':'transparent',fill:!!fill,pointBackgroundColor:color}};
+}}
+function miniDs(data) {{
+  return {{data,borderColor:BLUE,backgroundColor:'transparent',pointBackgroundColor:BLUE}};
+}}
+
+new Chart('c1',{{type:'line',data:{{labels:months14,datasets:[{{...mkDs(d_7d,PURPLE,true),label:'7d Rate (bps)'}}]}},options:lineOpts(true)}});
+new Chart('c2a',{{type:'line',data:{{labels:months13,datasets:[{{...mkDs(d_ut,'#dc2626',true),label:'UT Rate'}}]}},options:lineOpts(true,v=>v.toFixed(4)+'%')}});
+new Chart('c2b',{{type:'line',data:{{labels:months13,datasets:[{{...mkDs(d_ea,'#2563eb',true),label:'EA+NonReg Rate'}}]}},options:lineOpts(true,v=>v.toFixed(4)+'%')}});
+new Chart('c3a',{{type:'line',data:{{labels:months13r,datasets:[{{...mkDs(d_adlr,'#059669',true),label:'$ Approval Rate'}}]}},options:lineOpts(true,v=>(v*100).toFixed(0)+'%')}});
+new Chart('c3b',{{type:'line',data:{{labels:months13r,datasets:[{{...mkDs(d_acnt,'#d97706',true),label:'Unit Approval Rate'}}]}},options:lineOpts(true,v=>(v*100).toFixed(0)+'%')}});
+new Chart('c4',{{type:'line',data:{{labels:months14u,datasets:[{{...mkDs(d_unit_bps,PURPLE,true),label:'Unit Rate (bps)'}}]}},options:lineOpts(true,v=>v.toFixed(2)+' bps')}});
+new Chart('c5',{{type:'line',data:{{labels:['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'],
+  datasets:{yoy_datasets_js()}}},
+  options:{{responsive:true,maintainAspectRatio:false,
+    plugins:{{legend:{{position:'right',labels:{{usePointStyle:true,pointStyle:'line',pointStyleWidth:24,font:{{size:12}}}}}}}},
+    scales:{{x:{{grid:{{color:'#f3f4f6'}},ticks:{{font:{{size:11}}}}}},
+             y:{{grid:{{color:'#f3f4f6'}},ticks:{{font:{{size:11}}}},title:{{display:true,text:'7d $ Dispute Rate (bps)',font:{{size:11}}}}}}}},
+    elements:{{point:{{radius:4}},line:{{tension:0}}}}}}}});
+
+new Chart('m1',{{type:'line',data:{{labels:months14, datasets:[miniDs(d_7d)]}},      options:miniOpts()}});
+new Chart('m2',{{type:'line',data:{{labels:months13, datasets:[miniDs(d_ut)]}},      options:miniOpts()}});
+new Chart('m3',{{type:'line',data:{{labels:months13, datasets:[miniDs(d_ea)]}},      options:miniOpts()}});
+new Chart('m4',{{type:'line',data:{{labels:months13r,datasets:[miniDs(d_adlr)]}},    options:miniOpts()}});
+new Chart('m5',{{type:'line',data:{{labels:months13r,datasets:[miniDs(d_acnt)]}},    options:miniOpts()}});
+new Chart('m6',{{type:'line',data:{{labels:months14u,datasets:[miniDs(d_unit_bps)]}},options:miniOpts()}});
+
+function showTab(i) {{
+  document.querySelectorAll('.tab').forEach((t,j)=>t.classList.toggle('active',i===j));
+  document.querySelectorAll('.content').forEach((c,j)=>c.classList.toggle('active',i===j));
+}}
+</script>
+</body>
+</html>"""
+
+with open(OUT, 'w') as f: f.write(html)
 print(f"Saved: {OUT}")
 subprocess.run(['open', OUT])
-print("Done.")
+print("Done — dashboard opened in browser.")
