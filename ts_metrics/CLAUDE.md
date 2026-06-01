@@ -1,28 +1,41 @@
 # T&S Metrics — HTML Preview
 
-## Command
-When the user says **"generate T&S HTML"** (or "run T&S preview", "show T&S dashboard"):
-Run: `python3 <path-to-this-folder>/generate_ts_preview.py`
+## How to run
 
-This connects to Snowflake, runs all 5 metric queries, and opens a live HTML dashboard in the browser.
+Say **`/generate-ts-html`** to Claude (or plain English: "generate T&S HTML").
+
+Claude will:
+1. Run `generate_ts_preview.py` — pulls fresh Snowflake data (5 queries, Okta SSO auth)
+2. Search Slack + Glean for current month context
+3. Update the `NARRATIVE` dict in the script with fresh commentary and RAG status
+4. Re-run the script to produce a fully updated `ts_metrics_live.html`
+
+> The numbers AND the commentary both refresh every time. Numbers won't change much if run twice in the same month; commentary always reflects current Slack/Glean context.
 
 ---
 
 ## First-time setup (one person, one time)
-1. Open `generate_ts_preview.py` and set your Snowflake email at the top:
+
+1. Clone this repo: `git clone https://github.com/rohanchaturvedi/shared.git`
+2. Open `ts_metrics/generate_ts_preview.py` and set your email:
    ```
    SNOWFLAKE_USER = 'YOUR.EMAIL@CHIME.COM'
    ```
-2. Install dependencies if needed:
+3. Install dependencies if needed:
    ```
    pip install sqlalchemy snowflake-sqlalchemy pandas
    ```
-3. Run the command — a browser window will open for Okta SSO auth.
+4. Copy the skill to your Claude commands folder:
+   ```
+   cp .claude/commands/generate-ts-html.md ~/.claude/commands/
+   ```
+5. Launch Claude from the `ts_metrics/` directory and say `/generate-ts-html`
 
 ---
 
 ## What the dashboard produces
-A 6-tab HTML file (`ts_metrics_live.html`) saved in this folder:
+
+A 6-tab HTML file (`ts_metrics_live.html`) — fully self-contained, shareable with no database connection needed:
 
 | Tab | Contents |
 |-----|---------|
@@ -35,35 +48,18 @@ A 6-tab HTML file (`ts_metrics_live.html`) saved in this folder:
 
 ---
 
-## Tab 6 — Commentary & Forward Looking (update monthly)
+## Tab 6 — Commentary & Forward Looking
 
-Tab 6 includes a **Commentary & Forward Looking** section with narrative for each metric.
-This section is **not auto-generated from data** — it requires monthly research and human judgment.
+This section is auto-researched and written by Claude each time you run `/generate-ts-html`. Claude searches Slack and Glean for current context and updates the `NARRATIVE` dict in `generate_ts_preview.py` before regenerating.
 
-### How to update the narrative each month
-In `generate_ts_preview.py`, find the `NARRATIVE` dict near the top of the file.
-Update each metric's `commentary` and `forward_looking` text, and set `health` to `green`, `yellow`, or `red`.
-
-### Where to research (Slack channels + docs)
-Each month before running, check:
-- **#dispute-risk-analytics** — weekly dispute rate and loss updates, WoW trends
-- **#dispute-risk-internal** — team discussions on what's driving rate changes
-- **#spending-and-disputes** — cross-functional discussions on merchant/fraud trends
-- **#risk-rule-requests** — new rules deployed or updated (policy changes affecting dispute outcomes)
-- **#chime-experiments** — active experiments that may impact dispute rates or approval rates
-- **T&S Portfolio Metrics Review** (Google Doc) — official monthly narrative from the team
-- **Dispute Risk 20XX Tracker** (Google Doc, updated weekly) — ongoing investigations and actions
-
-### What to look for
-- **Rule deployments** (#risk-rule-requests): new SWAT routing rules, model migrations (mFPF), high-risk policies
-- **Active experiments** (#chime-experiments): anything touching authentication, dispute policy, or credit decisions
-  that could raise or lower dispute rates / approval rates
-- **Fraud patterns**: new merchant rings, scam typologies, ATO trends being investigated
-- **Mitigation actions**: bulk closures, merchant blocks, SOP changes
+### Sources Claude searches each run
+- **Slack:** `#dispute-risk-analytics`, `#dispute-risk-internal`, `#risk-rule-requests`, `#chime-experiments`, `#spending-and-disputes`
+- **Glean:** T&S metrics, dispute rate, dispute loss for the current month
+- **Docs:** T&S Portfolio Metrics Review, Dispute Risk Tracker
 
 ### Health indicator guide
-- 🟢 `green` — metric is stable or improving, no material concerns
-- 🟡 `yellow` — elevated or trending in wrong direction, team is monitoring/acting
+- 🟢 `green` — stable or improving, no material concerns
+- 🟡 `yellow` — elevated or trending wrong, team monitoring/acting
 - 🔴 `red` — significant concern, active remediation underway
 
 ---
@@ -78,3 +74,4 @@ Each month before running, check:
 | `m3_approve_deny.sql` | Approve/deny metrics (ex. de minimis) |
 | `m4_unit_rate.sql` | 7d dispute unit rate |
 | `m5_yoy_trend.sql` | YoY monthly trend (last 4+ years) |
+| `../.claude/commands/generate-ts-html.md` | Claude Code skill — copy to `~/.claude/commands/` |
