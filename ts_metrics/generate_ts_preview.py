@@ -12,7 +12,7 @@ USAGE:
 """
 
 # ── CONFIG — update this before first run ─────────────────────────────────────
-SNOWFLAKE_USER    = 'YOUR.EMAIL@CHIME.COM'   # <-- change this
+SNOWFLAKE_USER    = 'ROHAN.CHATURVEDI@CHIME.COM'
 SNOWFLAKE_ACCOUNT = 'CHIME'
 SNOWFLAKE_WH      = 'ANALYTICS_WH'
 SNOWFLAKE_ROLE    = 'SNOWFLAKE_PROD_ANALYTICS_PII_ROLE_OKTA'
@@ -328,104 +328,111 @@ def stat_cell_colored(label, val, color_fn):
 
 # ── NARRATIVE — update this section monthly after researching Slack + docs ────
 # Sources: T&S Portfolio Metrics Review, Dispute Risk 2026 Tracker, Slack #dispute-risk-analytics
-# Current narrative reflects: April 2026 performance
+# Current narrative reflects: May 2026 performance
 
 NARRATIVE = {
     '7d_dispute_dollar': {
         'health': 'yellow',
         'commentary': (
-            'The dispute rate was high in March due to tax seasonality, late notification and scam attacks. '
-            'It has come down in April (−9.5% MoM), though the YoY increase (+12.8%) reflects an elevated scam '
-            'environment vs. last year. Dispute loss for April stands at 7.8 bps (~18% above goal), primarily '
-            'driven by ~$17MM in Chime impersonation/scam claims filed since Jan 2026. '
-            'Weekly monitoring (w/e 5/18) shows a fresh uptick: 7D rate moved from 17bps → 19bps, '
-            'driven by 60K Debit EA and 15K Instant Transfer losses.'
+            'Dispute rate ticked back up from 17bps → 19bps (transaction week 5/11 → 5/18) after briefly dipping '
+            'from the March/April tax-season peak. Loss rate rose from 10.4% → 11.0% (resolution week 5/17), '
+            'driven by 60K Debit EA and 15K Instant Transfer losses. April loss closed at 7.8 bps (~18% above '
+            'goal), with ~$17MM in Chime impersonation/scam claims filed since Jan 2026 as the primary driver. '
+            'Scam daily losses dropped sharply in early May ($240K/week → ~$13K/day by 5/7) as bulk closures '
+            'and SWAT routing took hold, but a fresh uptick emerged in the week of 5/18.'
         ),
         'forward_looking': (
-            'Account closures ongoing for scam-linked users (dormancy + rapid P2P funding patterns). '
-            'Coinify and MRCR merchants blocked. Scam loss rates declining sharply in May as SWAT routing and '
-            'bulk closures take effect. '
-            'mFPF v2 migration for self-serve disputes live (#risk-rule-requests) — expected loss improvement. '
-            'Fast Travel Scan ID experiment live: targets scam/UT dispute rate reduction for fast-travel-flagged logins. '
-            'Card Face Auth experiment (Incode) in flight for high-risk transactions.'
+            'Fast Travel Scan ID experiment ramped to 100% (6/1) — biometric step-up for impossible-travel logins. '
+            'Card Face Auth (Incode) launched 5/28 for high-risk FPF cohorts; running 2 months. '
+            'New SWAT Routing Scam Trend Decplat Rule v1 (5/29) uses dispute questionnaire signals to route FPF scam disputes. '
+            'SWAT Routing Dormancy BD V1 (5/28) routes ~21K dormant/Bangladesh-blocked users to SWAT. '
+            'ATOM v3 refresh shipped — estimated ~$300–700K/year dispute loss savings from improved ScanID precision.'
         )
     },
     '7d_dispute_count': {
         'health': 'yellow',
         'commentary': (
-            'Count-based rate slightly down MoM (−0.43%) but elevated YoY (+23.93%), reflecting broader '
-            'increase in small-dollar disputes. SPF (Semi-Professional Fraud) is the primary driver — '
-            '36% of scam cases, 49% of disputed dollars, 73% of all disputes filed. '
-            'ANI linkage analysis confirms organized/third-party abuse rather than standalone ATO. '
-            'HIGH_RISK_Routing_Policy_V7 and V1.5K deployed (#risk-rule-requests) to route high-risk disputes to SWAT.'
+            'Unit rate remains elevated YoY, with small-dollar dispute volume holding high through May. '
+            'SPF (Semi-Professional Fraud) continues as the dominant typology — organized fraud rings '
+            'confirmed via ANI linkage and device-sharing analysis. New merchant fraud ring identified in '
+            'Philly/Darby area (BRAIDSBYSHAMYA, VOICE OF THE CHILDREN L, PARTNERS A., MILLIONARE MIR, '
+            'C&B LUXURY AUTO) — ghost merchants active since 5/8 with $50K+ NB at fixed ~$1.9K–$2.9K amounts. '
+            'Prison commissary fraud also spiked: UNION SUPPLY DIRECT ($9K from 55 users in May).'
         ),
         'forward_looking': (
-            'ZTA auto-resolution at 34.87% (exceeding 2026 target). '
-            'P2P scam questionnaire & M2G interstitial experiment active — "during-the-scam" intervention '
-            'expected to reduce UT scam filing rates. '
-            'AA closure SOP updated: closing all FPF users with >$500 disputed. '
-            'Google velocity rule volume dropped ~99% indicating effective controls on Google-related fraud.'
+            'P2P scam questionnaire & M2G interstitial at 100% since 5/12 — "during-the-scam" friction expected '
+            'to reduce UT scam filing rates over coming months. '
+            'SSD_rate_limit mFPF v2 migration live (5/20) — updated self-serve disablement using improved FPF scores. '
+            'High Risk ANI routing rules V1/V2/V3 all live in May, progressively tightening coverage. '
+            'Atom_new_device_block_v5_ATOMv3 (5/29) updated to exclude 2 reason codes with in-app guardrail handling.'
         )
     },
     'pct_ut': {
         'health': 'green',
         'commentary': (
-            'UT rates largely stable with a slight uptick from last month (71.7% → 72.4%), '
-            'driven by tax seasonality and ongoing fraud trends. '
-            'Share in line with prior year (72.0% Apr-25). '
-            'SPF typology dominates scam UT claims; late notification disputes remain elevated.'
+            'UT share stable in the 71–72% range through May, consistent with prior year. '
+            'Tax season pressure normalizing as expected into summer. '
+            'SPF typology continues to dominate scam UT claims; questionnaire data from p2p_scam_questionnaire '
+            'experiment now feeding richer signals to dispute team for scam identification and denial. '
+            'SWAT Routing SCAM trend bulk-actioned users rule (5/21) targets April FPF attack cohort specifically.'
         ),
         'forward_looking': (
-            'Tax season effects expected to normalize into summer. '
-            'P2P FaceAuth (Q1 ship) and scam interstitial questionnaire experiment underway to reduce UT scam approvals. '
-            'New UT SOP signals being incorporated into future SWAT genpop SOP. '
-            '3DS Shift-Deny-to-OOB experiment in flight — converting 3DS denials to in-app auth; '
-            'monitoring for dispute rate impact on newly-approved transactions.'
+            '3DS Step-Up Choice vs OTP Only experiment (started 5/4, 6 weeks) — converting in-app auth; '
+            'monitoring for UT dispute rate impact on newly-approved transactions. '
+            'Shift-Deny-to-OOB experiment (5/4, 6 weeks) converts 3DS denials to in-app auth for recent phone-change users. '
+            'New SWAT Scam Trend Decplat Rule (5/29) uses questionnaire answers for FPF scam routing — '
+            'expected to improve SWAT denial rates on scam UT claims.'
         )
     },
     'pct_ea': {
-        'health': 'green',
+        'health': 'yellow',
         'commentary': (
-            'EA/Non-reg share slightly down from last month (28.3% → 27.6%), with UT taking a larger share. '
-            'Non-reg FC losses (primarily NRGS — non-receipt of goods/services) remain elevated; '
-            'Forge GA mid-April (~50% non-reg coverage) identified as contributing factor. '
-            'CB filed on 75–90% of NRGS losses.'
+            'EA NB jumped from ~$178K → ~$248K WoW (resolution week 5/17), driven by debit purchase (~$177K). '
+            'Non-Reg NB rate increased 0.36% → 0.55% in the same week; recat losses (non-reg reclassified to '
+            'EA/UT) running ~$146K/week — members exploiting PVC-eligible reason codes for quick credits. '
+            'New merchant fraud ring in Philly area and prison commissary spike (UNION SUPPLY DIRECT) are '
+            'adding EA/Non-reg volume. Compliance approval awaited for PVC clock reset post-recat fix.'
         ),
         'forward_looking': (
-            'Monitoring NRGS SOP intake change (stricter proof-of-merchant-contact) for potential loophole exploitation. '
-            'Merchant evidence quality in pre-arb under review. '
-            'mFPF v2 migration (self-serve disputes) may affect EA approval rates — monitoring in progress. '
-            'MCD hold reduction experiments (DDer and non-DDer) active; loss rate monitoring in place.'
+            'Recat loss fix (PVC clock reset post reclassification) pending compliance approval — '
+            'expected to close $100K+/week exposure once approved. '
+            'SWAT_Routing_gambling_MCC_v5 (5/19) updated threshold to ≥$1200 for gambling/lost-stolen claims. '
+            'mFPF v2 SSD migration experiment (3 weeks from 5/22) monitoring for EA approval rate impact. '
+            'Non-reg False Claim Rate Optimization: three opportunities targeting ~$150K/month scoped for Q2.'
         )
     },
     'approval_count': {
         'health': 'green',
         'commentary': (
-            'Unit approval rate incremented (+4.9% MoM) to 50%, partly driven by higher approvals on '
-            'scam claims and non-regulated disputes. ~$5MM in fake scam claim credits issued YTD 2026. '
-            'Approval rate elevated vs. last year (+10.0% YoY). '
-            'HIGH_RISK_Routing_Policy_V7 live: routing more high-risk disputes to SWAT which has lower approval rates.'
+            'FC 15D rate dropped sharply for the most recent mature cohort (4.74% → 3.29%, week of 4/26), '
+            'across all products: ATM 5.5%, Debit 3.9%, Credit 2.3%, PF 1.3%. '
+            'FC 7D ticked up 1.95% → 2.36% (dispute week 5/3 → 5/10), mainly ATM. '
+            'Unit approval rate has stabilized after the April uptick driven by scam claim approvals; '
+            'HIGH_RISK_Routing_Policy routing high-risk disputes to SWAT is keeping approval rates in check.'
         ),
         'forward_looking': (
-            'New UT SOP will impact approval rates post rollout. '
-            'ZTA at 34.87% auto-resolution (exceeding 2026 target). '
-            'Watch: 3DS Step-Up Choice vs OTP experiment and Shift-Deny-to-OOB — both aimed at higher '
-            'approvals/spend; could modestly increase dispute volumes on newly-approved transactions. '
-            'MyPay Higher Limits ($1000 cap) experiment active for low-risk members — monitoring for NB exposure.'
+            'priority policy non-safeguard v5 (mFPF v2 migration, 5/19) updates dispute queue prioritization '
+            'to use improved FPF model — expected to improve SWAT agent efficiency. '
+            '3DS Step-Up Choice and Shift-Deny-to-OOB experiments both in-flight — both aimed at higher '
+            'approvals on newly-authenticated transactions; monitoring for downstream dispute impact. '
+            'Negative Balance Early Reminders experiment (5/19–7/1) has dispute loss as a guardrail metric.'
         )
     },
     'approval_dollar': {
         'health': 'green',
         'commentary': (
-            'Dollar approval rate increased notably MoM (+16%), driven by large scam claim approvals and higher '
-            'credits on non-regulated claims. $ approval rate increase outpaces unit rate, indicating '
-            'higher-value claims being approved. Loss rate (resolution week 5/17) increased to 11.0% '
-            'from 10.4% the prior week, mainly 60K Debit EA and 15K Instant Transfer.'
+            'Dollar approval rate stabilizing after the April +16% MoM surge. Loss rate at 11.0% (week 5/17) '
+            'vs. 10.4% prior week — EA debit purchase and Instant Transfer the main drivers. '
+            'Recat losses ($146K/week) inflating approved dollar amounts as non-reg claims shift to PVC-eligible '
+            'EA/UT reasons. ~$5MM in fake scam claim credits issued YTD 2026 remains a key loss driver. '
+            'ATOM v3 shipped with directional −22.5% dispute loss per user (~$300–700K/year annualized).'
         ),
         'forward_looking': (
-            'Aggressive actions to disrupt bad actors: bulk closures, SWAT routing, ANI-based signals. '
-            'Upstream controls being strengthened: P2P FaceAuth, contactless model, EMV fallback. '
-            'P2P scam SOP updates pending bank approval. '
+            'Card Face Auth (Incode, 5/28) targets FPF deterrence for high-risk cohorts — '
+            'building on P2P FaceAuth result (−23.6% annualized dispute loss). '
+            'Inspector/Vero Chargeback Tooling fix in progress: recovering 20–30% of ~$1.6M stuck CB cases (~$100–400K loss reduction). '
+            'Email Linkage Controls scoping underway: 8% of scam losses tied to shared-email clusters ($400K YTD). '
+            'IVR Authentication feasibility check targeting delivery before June.'
             'Watch: Negative Balance Pre-Closure Notice experiment showed stat-sig reduction in NB closures — '
             'may modestly affect dispute patterns for members kept active longer.'
         )
@@ -598,9 +605,9 @@ html = f"""<!DOCTYPE html>
       {summary_rows_html()}
     </table></div>
   <div class="card">
-    <div class="section-title">Commentary &amp; Forward Looking — April 2026 Performance</div>
+    <div class="section-title">Commentary &amp; Forward Looking — May 2026 Performance</div>
     <div style="font-size:11px;color:#9ca3af;margin-bottom:14px">
-      Sources: T&amp;S Portfolio Metrics Review · Dispute Risk 2026 Tracker · April 2026 Dispute Uptick Doc · #dispute-risk-analytics
+      Sources: T&amp;S Portfolio Metrics Review · Dispute Risk 2026 Tracker · #dispute-risk-analytics
     </div>
     {narrative_html()}
   </div>
