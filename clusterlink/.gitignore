@@ -1,0 +1,16 @@
+# PII safety — generated artifacts must NEVER be committed back.
+# Each user who runs the pipeline produces local CSVs containing
+# Chime member PII (emails, hashed SSNs, addresses). The generated
+# HTML dashboard contains aggregated data but should also stay local.
+
+outputs/
+*.csv
+clusterlink_live.html
+
+# Python / virtualenv noise
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+.DS_Store
